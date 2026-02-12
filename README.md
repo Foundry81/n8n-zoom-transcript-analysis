@@ -3,6 +3,7 @@
 This n8n workflow automates the analysis of client meeting transcripts for Managed Service Providers (MSPs) - and able to be adapted for other professional service organizations. It leverages LLMs ( I used Ollama/Gemma3:12 while building it) to extract actionable insights, operational risks, business opportunities, and sentiment analysis, ultimately generating an executive-ready report in HTML and PDF formats.
 
 Best of all, everything used can be self hosted - keeping your data in your hands.
+![n8n screenshot](./readme-assets/screenshot-n8n.png)
 
 ## Features
 
