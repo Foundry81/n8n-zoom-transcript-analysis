@@ -1,0 +1,166 @@
+[00:00:05] Jordan Blake: Uh, hey everyone… thanks for, um, making the time today. I know… the last couple weeks have been… kinda stressful, so before we dive into… renewal stuff, I want to check… you know… stabilized after the, uh… ransomware incident.
+
+[00:00:18] Melissa Carter: Stabilized? [laughs] Yeah… operational, yes… comfortable? Not really.
+
+[00:00:23] Priya Singh: [overlap] Financially, that week… it hurt.
+
+[00:00:25] Jordan Blake: Yeah… fair point. Uh… where’s the most uncertainty right now?
+
+[00:00:30] Daniel Ortiz: Two things… um, first, how it happened… second, making sure it doesn’t happen again.
+
+[00:00:35] Alex Moreno: And honestly… um… the downtime? Yeah, plant operations were scrambled…
+
+[00:00:40] Jordan Blake: Got it… uh… let’s unpack that. Daniel, can you give the quick tech overview?
+
+[00:00:44] Daniel Ortiz: Uh, yeah… logs show a credential compromise… password reuse from a past breach… uh, user didn’t realize.
+
+[00:00:50] Melissa Carter: Which I didn’t even… I didn’t know that… that was possible…
+
+[00:00:52] Jordan Blake: Yeah, uh, that’s on us for not emphasizing the risk enough. Password reuse… very common entry point… MFA could have helped…
+
+[00:01:05] Priya Singh: [overlap] But we scoped MFA last year and… didn’t move forward.
+
+[00:01:08] Jordan Blake: Right… it didn’t move forward… understood.
+
+[00:01:10] Melissa Carter: Because… added cost at the time… nothing had happened yet.
+
+[00:01:12] Jordan Blake: Sure.
+
+[00:01:15] Jordan Blake: Can I ask… if you look back… what info would’ve helped you decide differently?
+
+[00:01:20] Melissa Carter: Financial risk. Downtime cost more than MFA project.
+
+[00:01:25] Priya Singh: And stress… yeah, brutal week.
+
+[00:01:30] Jordan Blake: Got it.
+
+[00:01:32] Jordan Blake: Okay, current agreement… renews March 1st… pricing flat three years… given incident response and hardening… we need to revisit structure slightly.
+
+[00:01:40] Melissa Carter: Slightly… meaning?
+
+[00:01:42] Jordan Blake: Roughly 8 percent increase… covers increased monitoring and licensing inflation.
+
+[00:01:45] Melissa Carter: Not terrible… I expected worse.
+
+[00:01:47] Jordan Blake: Base renewal only… separate from layered security options.
+
+[00:01:50] Alex Moreno: Uh… what do these options cover?
+
+[00:01:52] Jordan Blake: Uh… three things: enforced MFA, 24/7 monitoring, security awareness + phishing training.
+
+[00:01:58] Melissa Carter: And what’s missing today?
+
+[00:02:00] Jordan Blake: Endpoint protection only… no after-hours monitoring… limited detection… no structured training cadence.
+
+[00:02:08] Daniel Ortiz: [overlap] Breach hit at 11:42 PM… no one saw until 6:30 AM.
+
+[00:02:12] Melissa Carter: Exactly. That gap… still bothers me.
+
+[00:02:15] Priya Singh: Uh, budget?
+
+[00:02:17] Jordan Blake: Full package… ~$2,300/month.
+
+[00:02:20] Priya Singh: [sighs] Ouch… significant.
+
+[00:02:22] Melissa Carter: Point taken. Downtime alone… $48k.
+
+[00:02:25] Jordan Blake: Exactly. Stepwise approach: MFA first, monitoring second, training phased in.
+
+[00:02:30] Melissa Carter: If we’d approved last year… would this have happened?
+
+[00:02:32] Jordan Blake: Possibly… nothing is absolute… but likelihood drops… detection window shrinks from hours to minutes.
+
+[00:02:38] Alex Moreno: Uh… second facility Q3… complicates rollout?
+
+[00:02:40] Jordan Blake: Makes centralized monitoring more important.
+
+[00:02:42] Daniel Ortiz: Haven’t budgeted IT expansion yet.
+
+[00:02:44] Jordan Blake: Then we plan next 30 days… otherwise, reactive security again.
+
+[00:02:50] Melissa Carter: Board asks about bringing IT in-house…
+
+[00:02:52] Jordan Blake: Are they unhappy with response time… or the model itself?
+
+[00:02:54] Priya Singh: Emotional, not strategic.
+
+[00:02:56] Jordan Blake: Then we help you tell risk reduction story internally.
+
+[00:03:00] Jordan Blake: Renewal only… here’s risk profile. MFA only… here’s the improvement. Full layered… maturity jump. Board-ready modeling included.
+
+[00:03:05] Melissa Carter: Need that.
+
+[00:03:07] Jordan Blake: Proposal: renew base + 8 percent… MFA now… roadmap board-ready… reconvene 2 weeks to finalize monitoring rollout.
+
+[00:03:10] Priya Singh: Numbers broken down line by line… please.
+
+[00:03:12] Daniel Ortiz: And… technical monitoring docs.
+
+[00:03:14] Jordan Blake: Done. Thursday delivery.
+
+[00:03:18] Melissa Carter: Shook confidence… response solid. That matters.
+
+[00:03:20] Jordan Blake: We don’t show up only when calm.
+
+[00:03:22] Melissa Carter: Calm is overrated lately.
+
+[00:03:24] Jordan Blake: [laughs] Anything else before wrap?
+
+[00:03:26] Melissa Carter: No more surprises.
+
+[00:03:28] Jordan Blake: That’s the goal.
+
+[00:03:30] Alex Moreno: Uh… quick tangent… new plant software… anyone tested patch rollout?
+
+[00:03:33] Daniel Ortiz: Some, but half the machines lagged… uh… still troubleshooting.
+
+[00:03:36] Jordan Blake: Okay… note that for monitoring… we can flag update failures.
+
+[00:03:40] Priya Singh: And the licensing? Did we account for the new facility?
+
+[00:03:42] Jordan Blake: Not fully… need to add extra endpoints, yeah.
+
+[00:03:45] Melissa Carter: Also… employee training… new hires last month skipped phishing module?
+
+[00:03:48] Daniel Ortiz: Uh… yeah, system glitch… manual assignment pending.
+
+[00:03:50] Jordan Blake: Alright… action: assign pending modules, track completion.
+
+[00:03:53] Alex Moreno: [laughs] Guess I’m responsible for plant floor staff… they hate extra training.
+
+[00:03:55] Melissa Carter: [chuckles] We’ll manage, Alex.
+
+[00:03:58] Jordan Blake: Okay… back to security roadmap… MFA first, then monitoring, then training phase-in. Prioritize high-risk users.
+
+[00:04:02] Priya Singh: Sounds good… budget needs approval.
+
+[00:04:05] Jordan Blake: I’ll prepare detailed line items and send Thursday.
+
+[00:04:08] Daniel Ortiz: Also… alerts for unusual login patterns… we still get delayed notifications?
+
+[00:04:12] Jordan Blake: Delay reduced, but alerts need review… I’ll add SOP for admin review.
+
+[00:04:15] Melissa Carter: Thanks… anything else?
+
+[00:04:17] Alex Moreno: Plant floor cybersecurity drills… we never tested in live environment.
+
+[00:04:20] Jordan Blake: Good catch… we can schedule drill next month.
+
+[00:04:23] Priya Singh: Uh… final question… board presentation… include risk reduction numbers?
+
+[00:04:26] Jordan Blake: Yes… full comparison: renewal only, MFA only, full layered.
+
+[00:04:28] Melissa Carter: Perfect.
+
+[00:04:30] Jordan Blake: Anything else before we wrap?
+
+[00:04:32] Daniel Ortiz: Uh… just confirm next check-in date?
+
+[00:04:34] Jordan Blake: Two weeks from today… finalize monitoring rollout.
+
+[00:04:36] Melissa Carter: Great… that works.
+
+[00:04:38] Alex Moreno: [overlap] Thanks, Jordan.
+
+[00:04:40] Jordan Blake: Thanks, all.
+

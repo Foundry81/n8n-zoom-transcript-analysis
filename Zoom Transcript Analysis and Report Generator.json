@@ -1,0 +1,1249 @@
+{
+  "name": "Zoom Transcript Analysis and Report Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "allowFileUploads": true,
+          "allowedFilesMimeTypes": "text/markdown, text/plain",
+          "responseMode": "lastNode"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -1248,
+        -500
+      ],
+      "id": "804da93f-6b19-40aa-99d7-934aee595abb",
+      "name": "When chat message received",
+      "webhookId": "93c805d3-10b4-442b-af41-974c742c8c0b",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "binaryPropertyName": "data0",
+        "destinationKey": "text",
+        "options": {
+          "encoding": "utf8"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -1024,
+        -500
+      ],
+      "id": "6d59695c-4200-4782-a625-edf5ad981e2c",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const transcript = $json.text;\n\n// Split BEFORE each timestamp without removing it\nconst entries = transcript\n  .split(/(?=\\[\\d{2}:\\d{2}:\\d{2}\\])/)\n  .map(e => e.trim())\n  .filter(e => e.length > 0);\n\nreturn entries.map(entry => ({\n  json: {\n    entry\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        -500
+      ],
+      "id": "c56dd6ff-600b-484d-8d45-a81ad3cea69b",
+      "name": "Split by timestamp"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        -56,
+        -1120
+      ],
+      "id": "86926b61-22de-4bcc-bdca-b958a009576e",
+      "name": "Ollama Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const windowSize = 60; // 5 minutes\nconst grouped = {};\n\nfor (const item of items) {\n  const { entry, totalSeconds } = item.json;\n\n  if (totalSeconds === null) continue;\n\n  // Determine which 5-minute window this entry belongs to\n  const windowStart = Math.floor(totalSeconds / windowSize) * windowSize;\n  const windowEnd = windowStart + windowSize;\n\n  if (!grouped[windowStart]) {\n    grouped[windowStart] = {\n      windowStart,\n      windowEnd,\n      entries: []\n    };\n  }\n\n  grouped[windowStart].entries.push(entry);\n}\n\n// Convert grouped object into array output\nreturn Object.values(grouped).map(group => ({\n  json: {\n    windowStart: group.windowStart,\n    windowEnd: group.windowEnd,\n    chunkText: group.entries.join(\"\\n\\n\")\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        -500
+      ],
+      "id": "3cb5cb54-9082-4967-9b63-989b7155a135",
+      "name": "Chunk by X minutes"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a smart assistant for Managed Service Providers (MSPs).\n\nThe following transcript segment is from a client meeting. Your task is to extract **operational action items** clearly assigned to people or teams. \n\nInclude:\n- Who is responsible\n- What the task is\n- Any due dates or timelines mentioned\n- Priority if explicitly stated\n\nConstraints:\n- Only include actions explicitly mentioned in the transcript.\n- Do not invent anything.\n- Return only JSON with this structure:\n\n[\n  {\n    \"assignee\": \"Name or team\",\n    \"task\": \"Describe action\",\n    \"due\": \"YYYY-MM-DD or timeline text if given\",\n    \"priority\": \"high/medium/low if mentioned, otherwise null\"\n  }\n]\n\nTranscript Segment:\n\n{{ $json.chunkText }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        -1344
+      ],
+      "id": "f43bae84-a53c-4d7a-a293-f34feefc2b06",
+      "name": "Action Item and Task Extraction"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const entry = $json.entry;\n\n// Extract HH:MM:SS\nconst match = entry.match(/\\[(\\d{2}):(\\d{2}):(\\d{2})\\]/);\n\nif (!match) {\n  return {\n    json: {\n      entry,\n      totalSeconds: null\n    }\n  };\n}\n\nconst hours = parseInt(match[1], 10);\nconst minutes = parseInt(match[2], 10);\nconst seconds = parseInt(match[3], 10);\n\nconst totalSeconds = hours * 3600 + minutes * 60 + seconds;\n\nreturn {\n  json: {\n    entry,\n    hours,\n    minutes,\n    seconds,\n    totalSeconds\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        -500
+      ],
+      "id": "9cc892b2-1fee-4090-be07-3d2ac54f1aaf",
+      "name": "Add Timestamps to Array Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "let allActions = [];\n\n// Loop through each item from the LLM output\nfor (const item of items) {\n\n    const windowStart = item.json.windowStart;\n    const windowEnd = item.json.windowEnd;\n\n    // Strip ```json fences\n    const jsonText = item.json.text.replace(/```json|```/g, '').trim();\n\n    try {\n        // Parse the JSON array from the LLM\n        const parsed = JSON.parse(jsonText);\n\n        // Attach window metadata to each extracted object\n        parsed.forEach(a => {\n            allActions.push({\n                windowStart,\n                windowEnd,\n                ...a\n            });\n        });\n\n    } catch (e) {\n        console.error('JSON parse error:', e, jsonText);\n    }\n}\n\n// Return each action as a separate n8n item\nreturn allActions.map(a => ({ json: a }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -1040
+      ],
+      "id": "356a110d-be6c-4076-8d3e-446eec00938e",
+      "name": "Parse JSON, Build New Object"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        -56,
+        -720
+      ],
+      "id": "2d3129a2-7c27-4526-aebd-a1cdf31cf00b",
+      "name": "Ollama Model1",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a cybersecurity risk analyst assisting a Managed Service Provider.\n\nThe following transcript segment is from a client meeting.\n\nYour task is to identify explicit or implied risks discussed in the conversation.\n\nInclude:\n- Security gaps\n- Delayed remediation decisions\n- Missing controls\n- Process weaknesses\n- Exposure created by budget limitations\n- Operational weaknesses that increase attack surface\n- Only include risks supported by the transcript.\n- Return JSON in this format:\n\n[\n  {\n    \"riskType\": \"...\",\n    \"description\": \"...\",\n    \"impact\": \"Low/Medium/High/Critical\",\n    \"likelihood\": \"Low/Medium/High\",\n    \"evidence\": \"Short supporting quote\",\n    \"recommendedMitigation\": \"If mentioned or implied\"\n  }\n]\n\n\nTranscript segment:\n{{ $json.chunkText }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        -944
+      ],
+      "id": "3c8c272f-0915-4aa7-a1af-7a5994e259d8",
+      "name": "Risk Extraction"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        -1040
+      ],
+      "id": "fa60839d-e8cc-4e0e-a7b1-cc8b6925bb9c",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        -744
+      ],
+      "id": "aa1f28e4-2261-4ded-8d54-22e8f0e7e61d",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let allActions = [];\n\n// Loop through each item from the LLM output\nfor (const item of items) {\n\n    const windowStart = item.json.windowStart;\n    const windowEnd = item.json.windowEnd;\n\n    // Strip ```json fences\n    const jsonText = item.json.text.replace(/```json|```/g, '').trim();\n\n    try {\n        // Parse the JSON array from the LLM\n        const parsed = JSON.parse(jsonText);\n\n        // Attach window metadata to each extracted object\n        parsed.forEach(a => {\n            allActions.push({\n                windowStart,\n                windowEnd,\n                ...a\n            });\n        });\n\n    } catch (e) {\n        console.error('JSON parse error:', e, jsonText);\n    }\n}\n\n// Return each action as a separate n8n item\nreturn allActions.map(a => ({ json: a }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -744
+      ],
+      "id": "0da2465f-a7c6-470b-a227-21248b29413d",
+      "name": "Parse JSON, Build New Object1"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        -56,
+        -40
+      ],
+      "id": "16419088-c277-4709-973d-cf5584831709",
+      "name": "Ollama Model2",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        -256
+      ],
+      "id": "755375e1-4b9e-42b9-bf3c-597df9b9c6b9",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "jsCode": "let allOpportunities = [];\n\nfor (const item of items) {\n\n    const windowStart = item.json.windowStart;\n    const windowEnd = item.json.windowEnd;\n\n    const jsonText = item.json.text.replace(/```json|```/g, '').trim();\n\n    try {\n        const parsed = JSON.parse(jsonText);\n\n        parsed.forEach(o => {\n            allOpportunities.push({\n                windowStart,\n                windowEnd,\n                ...o\n            });\n        });\n\n    } catch (e) {\n        console.error('JSON parse error:', e, jsonText);\n    }\n}\n\nreturn allOpportunities.map(o => ({ json: o }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -256
+      ],
+      "id": "2b582296-b9fa-499a-9457-40d76139abcf",
+      "name": "Parse JSON, Build New Object2"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        1768,
+        -568
+      ],
+      "id": "bf777c77-2cf6-46d2-94da-642db2d0fd7e",
+      "name": "Ollama Model3",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "tasks",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        672,
+        -1040
+      ],
+      "id": "10e47c9b-4da9-476a-a9e6-fb1edf7f42cf",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "risks",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        672,
+        -744
+      ],
+      "id": "aec82cfa-64af-4af3-8f43-6999d4c82998",
+      "name": "Aggregate1"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "opportunities",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        672,
+        -256
+      ],
+      "id": "1a056d61-72e0-42b3-bcf7-3fd05243b48d",
+      "name": "Aggregate2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a strategic advisor for a Managed Service Provider (MSP).\n\nThe following transcript segment is from a client meeting.\n\nYour task is to identify business value opportunities discussed or implied in the conversation.\n\nThese may include:\n- Service expansion\n- Security maturity upgrades\n- Budget reallocation\n- Growth-driven infrastructure needs\n- Internal board reporting leverage\n- Operational efficiency improvements\n- Cross-sell opportunities\n- Underutilized services\n- Only include opportunities supported by the transcript.\n- Return only JSON in this format:\n\n[\n  {\n    \"opportunityType\": \"...\",\n    \"description\": \"...\",\n    \"businessDriver\": \"...\",\n    \"estimatedImpact\": \"Low/Medium/High\",\n    \"confidence\": \"Low/Medium/High\",\n    \"evidence\": \"Short quote\"\n  }\n]\n\n\nTranscript Segment:\n{{ $json.chunkText }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        -264
+      ],
+      "id": "c223f52e-a911-4bc7-82ba-0352511ae49c",
+      "name": "Opportunity Extraction"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are preparing an executive-ready summary of a client meeting for senior leadership and board-level stakeholders.\n\nYou are provided structured findings extracted from the meeting:\n\nTasks:\n{{ JSON.stringify($json.tasks, null, 2) }}\n\nRisks:\n{{ JSON.stringify($json.risks, null, 2) }}\n\nOpportunities:\n{{ JSON.stringify($json.opportunities, null, 2) }}\n\nYour role is to synthesize these into a concise strategic summary.\n\nFocus on:\n\nBusiness impact\n\nFinancial exposure\n\nOperational risk\n\nStrategic opportunity\n\nDecisions implied by the actions\n\nItems requiring executive visibility\n\nDo not speculate beyond the provided data.\nDo not use marketing language.\nAvoid operational minutiae unless strategically relevant.\n\nReturn only valid JSON in the following format:\n\n{\n  \"meetingOverview\": \"\",\n  \"executiveRiskLevel\": \"Low | Moderate | Elevated | Critical\",\n  \"keyDecisions\": [],\n  \"identifiedRisks\": [],\n  \"identifiedOpportunities\": [],\n  \"financialImplications\": [],\n  \"operationalConcerns\": [],\n  \"recommendedNextSteps\": [],\n  \"escalationsRequired\": []\n}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1696,
+        -792
+      ],
+      "id": "2be67cda-c9f3-4931-8f71-9eeae9a2dca8",
+      "name": "Executive Summary"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        960,
+        -760
+      ],
+      "id": "fee59eba-b181-4a08-b05e-611cc33c1587",
+      "name": "Merge4"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        -56,
+        464
+      ],
+      "id": "2abfe9bd-acd8-4e9c-ac7f-f5bfb0544e5b",
+      "name": "Ollama Model4",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        40
+      ],
+      "id": "0caab767-f1a1-47c4-a4b4-7a06b068ae9d",
+      "name": "Merge5"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the sentiment of the following transcript segment and return JSON:\n\n{\n  \"overallSentiment\": \"Positive | Neutral | Negative | Mixed\",\n  \"engagementLevel\": \"Low | Medium | High\",\n  \"emotionalTone\": [\"string\"],\n  \"riskSignals\": [\"string\"],\n  \"positiveSignals\": [\"string\"],\n  \"notableQuote\": \"short excerpt\"\n}\n\nTranscript Segment:\n{{ $json.chunkText }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -128,
+        240
+      ],
+      "id": "c2c63b89-90e8-4748-ae79-095d7a0e2492",
+      "name": "Sentiment Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "let allSegments = [];\n\nfor (const item of items) {\n    const jsonText = item.json.text.replace(/```json|```/g, '').trim();\n\n    try {\n        const parsed = JSON.parse(jsonText);\n\n        // Push directly, adding windowStart/windowEnd\n        allSegments.push({\n            ...parsed,\n            windowStart: item.json.windowStart,\n            windowEnd: item.json.windowEnd\n        });\n\n    } catch (e) {\n        console.error('JSON parse error:', e, jsonText);\n    }\n}\n\n// Return each segment as a separate n8n item\nreturn allSegments.map(s => ({ json: s }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        40
+      ],
+      "id": "3410a269-ad63-4f37-bd92-d1d228180b64",
+      "name": "Parse JSON, Build New Object3"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "sentiments",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        672,
+        40
+      ],
+      "id": "d0b8c31b-5d8b-4387-8533-8fc10fe1c799",
+      "name": "Aggregate3"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        968,
+        264
+      ],
+      "id": "111c8749-d73c-47ba-91bd-2040ea81dee8",
+      "name": "Ollama Model5",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a meeting intelligence assistant for Managed Service Providers. \n\nYou have been provided with sentiment and engagement analysis for individual transcript segments of a client call. Each segment contains:\n\n- windowStart / windowEnd (in seconds)\n- overallSentiment: Positive | Neutral | Negative | Mixed\n- engagementLevel: Low | Medium | High\n- emotionalTone: array of detected emotions\n- riskSignals: array of potential risks mentioned\n- positiveSignals: array of positive interactions or statements\n- notableQuote: a short excerpt illustrating the sentiment\n\nYour task is to generate a **call-level summary**:\n\n1. Provide the **overall sentiment** for the call: Positive / Neutral / Negative / Mixed.\n2. Provide the **overall engagement level** for the call: Low / Medium / High.\n3. Highlight the **top 3 most frequent emotional tones** across the call.\n4. List **key risk signals** observed during the call.\n5. List **key positive signals** observed during the call.\n6. Include **2-3 notable quotes** from the segments that capture sentiment or engagement.\n7. Return the output **only in JSON** with this structure:\n\n{\n  \"overallSentiment\": \"Positive | Neutral | Negative | Mixed\",\n  \"overallEngagement\": \"Low | Medium | High\",\n  \"topEmotionalTones\": [\"string\"],\n  \"keyRiskSignals\": [\"string\"],\n  \"keyPositiveSignals\": [\"string\"],\n  \"notableQuotes\": [\"string\"]\n}\n\nSegments Data:\n{{ JSON.stringify($json.sentiments, null, 2) }}\n",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        896,
+        40
+      ],
+      "id": "18ef3cb0-b2df-46cc-83b7-e8b53093b30f",
+      "name": "Aggregated Sentiment Analysis"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1472,
+        -176
+      ],
+      "id": "bc3a5a61-e53a-4a3c-b055-6ab412e388a7",
+      "name": "Merge6"
+    },
+    {
+      "parameters": {
+        "model": "gemma3:12b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        1768,
+        172
+      ],
+      "id": "a68029ba-ec1e-4d72-9503-03953efd9c41",
+      "name": "Ollama Model6",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2272,
+        -560
+      ],
+      "id": "5328d62d-3716-4896-b201-e6a25911cabc",
+      "name": "Merge7"
+    },
+    {
+      "parameters": {
+        "template": "<html>\n<head>\n<title>Client Zoom Transcript Analysis</title>\n</head>\n<body>\n<div style=\"page-break-after: always;\">\n<h2>Executive Summary</h2>\n<p>\n<strong>Risk level:</strong> {{execsummary.executiveRiskLevel}}\n</p>\n<p>\n{{execsummary.meetingOverview}}\n</p>\n<h3>Key Decisions</h3>\n<ul>\n{{#each execsummary.keyDecisions}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Identified Risks</h3>\n<ul>\n{{#each execsummary.identifiedRisks}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Identified Opportunities</h3>\n<ul>\n{{#each execsummary.identifiedOpportunities}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Financial Implications</h3>\n<ul>\n{{#each execsummary.financialImplications}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Operational Concerns</h3>\n<ul>\n{{#each execsummary.operationalConcerns}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Recommended Next Steps</h3>\n<ul>\n{{#each execsummary.recommendedNextSteps}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n</div>\n<div style=\"page-break-after: always;\">\n<h2>Identified Tasks<h2>\n{{#each  tasks}}\n<h3>{{this.task}}</h3>\n<ul>\n<li>Transcript window: {{this.windowStart}}-{{this.windowEnd}}s</li>\n<li>Assignee: {{this.assignee}}</li>\n{{#if this.due}}\n<li>Due: {{this.due}}</li>\n{{/if}}\n{{#if this.priority}}\n<li>Priority: {{this.priority}}</li>\n{{/if}}\n</ul>\n{{/each}}\n</div>\n<div style=\"page-break-after: always;\">\n<h2>Identified Risks<h2>\n{{#each risks}}\n<h3>{{this.riskType}}</h3>\n<p>\n{{this.description}}\n</p>\n<ul>\n<li>Impact: {{this.impact}}</li>\n<li>Likelihood: {{this.likelihood}}</li>\n</ul>\n<h4>Evidence</h4>\n<p>\n {{this.evidence}}\n</p>\n<h4>Recommended Mitigation</h4>\n<p>\n{{this.recommendedMitigation}}\n</p>\n{{/each}}\n</div>\n<div style=\"page-break-after: always;\">\n<h2>Identified Opportunities<h2>\n{{#each opportunities}}\n<h3>{{this.oppotunityType}}</h3>\n<p>\n{{this.description}}\n</p>\n<h4>Business Driver</h4>\n{{this.businessDriver}}\n<ul>\n<li>Estimated Impact: {{this.estimatedImpact}}</li>\n<li>Confidence: {{this.confidence}}</li>\n</ul>\n<h4>Evidence</h4>\n<p>\n {{this.evidence}}\n</p>\n<h4>Recommended Mitigation</h4>\n<p>\n{{this.recommendedMitigation}}\n</p>\n{{/each}}\n</div>\n<div style=\"page-break-after: always;\">\n<h2>Sentiment Analysis</h2>\n<ul>\n<li>Overall Sentiment: {{sentiments.overallSentiment}}</li>\n<li>Overall Engagement: {{sentiments.overallEngagement}}</li>\n</ul>\n<h3>Top Emotional Tones</h3>\n<ul>\n{{#each sentiments.topEmotionalTones}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Key Risk Signals</h3>\n<ul>\n{{#each sentiments.keyRiskSignals}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Key Positive Signals</h3>\n<ul>\n{{#each sentiments.keyPositiveSignals}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n<h3>Notable Quotes</h3>\n<ul>\n{{#each sentiments.notableQuotes}}\n<li>{{this}}</li>\n{{/each}}\n</ul>\n</div>\n<div style=\"page-break-after: always;\">\n<h2>{{improvements.title}}</h2>\n<p>\n{{improvements.summary}}\n</p>\n<h3>Guidance</h3>\n{{#each improvements.guidance}}\n<p>{{this}}</p>\n{{/each}}\n<h3>Lessons Learned</h3>\n{{#each improvements.lessonsLearned}}\n<p>{{this}}</p>\n{{/each}}\n<h3>Recommended Next Steps</h3>\n{{#each improvements.recommendedNextSteps}}\n<p>{{this}}</p>\n{{/each}}\n</div>\n</body>\n</html>"
+      },
+      "type": "n8n-nodes-document-generator.documentGenerator",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        -544
+      ],
+      "id": "f23d6566-d3e5-4cca-9546-1ac56c3c717d",
+      "name": "DocumentGenerator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// input: your HTML string in json.html\nconst html = $json[\"text\"] || \"\";\nconst b64 = Buffer.from(html, \"utf8\").toString(\"base64\");\n\nreturn {\n  json: {\n    htmlBase64: b64,\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        -544
+      ],
+      "id": "22a38436-1dfb-4830-9091-598f4d626683",
+      "name": "Base64 Encode HTML"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "htmlBase64",
+        "options": {
+          "fileName": "index.html"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        2944,
+        -544
+      ],
+      "id": "e2b3f9b8-26e2-4f04-a1cb-ca21280c2669",
+      "name": "Base64 -> File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://oberon.home.foundry81.com:3200/forms/chromium/convert/html",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Gotenberg-Output-Filename",
+              "value": "={{ \"zoom-transcript\" + $now.toFormat('MMddyyyy') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "index.html",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "printBackground ",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3168,
+        -544
+      ],
+      "id": "107fc68b-950d-4aa0-8a84-7429aa8c593d",
+      "name": "HTML -> PDF (Gotenberg)",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an internal knowledge base assistant for MSP operations.\n\nBased on the following meeting data:\n\nTasks:\n{{ JSON.stringify($json.tasks, null, 2) }}\n\nRisks & Vulnerabilities:\n{{ JSON.stringify($json.risks, null, 2) }}\n\nOpportunities:\n{{ JSON.stringify($json.opportunities, null, 2) }}\n\nSentiment & Engagement Summary:\n{{ JSON.stringify($json.sentiments, null, 2) }}\n\nGenerate an educational article or guidance note that includes:\n\n- A summary of key operational takeaways\n- Actionable guidance for staff\n- Risk awareness points\n- How opportunities can be leveraged\n- Any lessons learned from engagement or sentiment\n- Recommended next steps for internal training or client communications\n\nReturn output in JSON only:\n\n{\n  \"title\": \"Short descriptive title\",\n  \"summary\": \"2–3 sentence meeting summary\",\n  \"guidance\": [\n    \"Point 1\",\n    \"Point 2\",\n    \"Point 3\"\n  ],\n  \"lessonsLearned\": [\n    \"Lesson 1\",\n    \"Lesson 2\"\n  ],\n  \"recommendedNextSteps\": [\n    \"Step 1\",\n    \"Step 2\"\n  ]\n}\n",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "/no_think"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1696,
+        -52
+      ],
+      "id": "25838a93-7344-4ef3-ac65-9ff78af4d523",
+      "name": "Areas of Improvement"
+    },
+    {
+      "parameters": {
+        "jsCode": "let allSegments = [];\n\nfor (const item of items) {\n    const jsonText = item.json.text.replace(/```json|```/g, '').trim();\n\n    try {\n        const parsed = JSON.parse(jsonText);\n\n        // Wrap parsed object under \"sentiments\"\n        allSegments.push({\n            json: {\n                sentiments: parsed\n            }\n        });\n\n    } catch (e) {\n        console.error('JSON parse error:', e, jsonText);\n    }\n}\n\n// Return all items as separate n8n items\nreturn allSegments;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        40
+      ],
+      "id": "4da21b00-a5c6-47f3-b22e-e20646ba3a58",
+      "name": "Parse Sentiment Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node\n\n// Input: items array from previous node\nreturn items.map(item => {\n    let text = item.json.text;\n\n    // Remove code block markers (```json ... ```)\n    text = text.replace(/^```json\\s*/, '').replace(/```$/, '');\n\n    // Parse JSON string\n    let parsed;\n    try {\n        parsed = JSON.parse(text);\n    } catch (error) {\n        throw new Error(`Failed to parse JSON: ${error.message}`);\n    }\n\n    // Return parsed JSON as the new item\n    return {\n        improvements: parsed\n    };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -52
+      ],
+      "id": "7ca16e70-f148-4342-80e4-8f5d23ce37aa",
+      "name": "Parse Areas of Improvement Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node\n\n// Input: items array from previous node\nreturn items.map(item => {\n    let text = item.json.text;\n\n    // Remove code block markers (```json ... ```)\n    text = text.replace(/^```json\\s*/, '').replace(/```$/, '');\n\n    // Parse JSON string\n    let parsed;\n    try {\n        parsed = JSON.parse(text);\n    } catch (error) {\n        throw new Error(`Failed to parse JSON: ${error.message}`);\n    }\n\n    // Return parsed JSON as the new item\n    return {\n        execsummary: parsed\n    };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -792
+      ],
+      "id": "f2a725d6-20c6-461f-8c25-f066c5880f35",
+      "name": "Parse Executive Summary"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9965a6e1-99ab-44ba-a1cd-56c217f5893e",
+              "name": "windowStart",
+              "type": "number",
+              "value": "={{ $json.windowStart }}"
+            },
+            {
+              "id": "9d6877a3-7365-478f-b795-acdc7f0c813f",
+              "name": "windowEnd",
+              "type": "number",
+              "value": "={{ $json.windowEnd }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -64,
+        -500
+      ],
+      "id": "57ec186b-78e5-4775-9115-13d82cd6c308",
+      "name": "Set Chunk Windows"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Split by timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split by timestamp": {
+      "main": [
+        [
+          {
+            "node": "Add Timestamps to Array Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Action Item and Task Extraction",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk by X minutes": {
+      "main": [
+        [
+          {
+            "node": "Set Chunk Windows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Opportunity Extraction",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Risk Extraction",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Action Item and Task Extraction",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sentiment Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Item and Task Extraction": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Timestamps to Array Items": {
+      "main": [
+        [
+          {
+            "node": "Chunk by X minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON, Build New Object": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Risk Extraction",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON, Build New Object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Risk Extraction": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON, Build New Object1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Opportunity Extraction",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON, Build New Object2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Executive Summary",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON, Build New Object1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON, Build New Object2": {
+      "main": [
+        [
+          {
+            "node": "Aggregate2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opportunity Extraction": {
+      "main": [
+        [
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Executive Summary": {
+      "main": [
+        [
+          {
+            "node": "Parse Executive Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Aggregate2": {
+      "main": [
+        [
+          {
+            "node": "Merge4",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge4": {
+      "main": [
+        [
+          {
+            "node": "Executive Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Sentiment Analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sentiment Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge5",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge5": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON, Build New Object3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON, Build New Object3": {
+      "main": [
+        [
+          {
+            "node": "Aggregate3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Aggregated Sentiment Analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate3": {
+      "main": [
+        [
+          {
+            "node": "Aggregated Sentiment Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregated Sentiment Analysis": {
+      "main": [
+        [
+          {
+            "node": "Parse Sentiment Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model6": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Areas of Improvement",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge6": {
+      "main": [
+        [
+          {
+            "node": "Areas of Improvement",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge7",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge7": {
+      "main": [
+        [
+          {
+            "node": "DocumentGenerator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 Encode HTML": {
+      "main": [
+        [
+          {
+            "node": "Base64 -> File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 -> File": {
+      "main": [
+        [
+          {
+            "node": "HTML -> PDF (Gotenberg)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DocumentGenerator": {
+      "main": [
+        [
+          {
+            "node": "Base64 Encode HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Areas of Improvement": {
+      "main": [
+        [
+          {
+            "node": "Parse Areas of Improvement Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Sentiment Data": {
+      "main": [
+        [
+          {
+            "node": "Merge6",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Parse Areas of Improvement Data": {
+      "main": [
+        [
+          {
+            "node": "Merge7",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Parse Executive Summary": {
+      "main": [
+        [
+          {
+            "node": "Merge7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Chunk Windows": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "03cc48b4-cabb-460d-b64e-bf3304500dcb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "089593b0375f52cffd2e682594e43cdd96459883230a04bef809490471c267bb"
+  },
+  "id": "6oG13SJSQmy4qGJh",
+  "tags": []
+}
